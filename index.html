@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+  <meta charset="utf-8">
+  <title>Trees Hate You</title>
+  <style>
+    body { background: #000; margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+    #unity-canvas { width: 100vw; height: 100vh; display: block; }
+    #loading-screen { 
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+      background: #111; display: flex; flex-direction: column; 
+      justify-content: center; align-items: center; color: white; z-index: 10;
+    }
+    #loading-text { font-size: 24px; margin-bottom: 20px; font-weight: bold; }
+    #progress-container { width: 300px; height: 20px; background: #333; border-radius: 10px; overflow: hidden; }
+    #progress-bar { width: 0%; height: 100%; background: #4CAF50; transition: width 0.2s; }
+  </style>
+</head>
+<body>
+  <div id="loading-screen">
+    <div id="loading-text">Preparing the Heist... 0%</div>
+    <div id="progress-container">
+      <div id="progress-bar"></div>
+    </div>
+  </div>
+  <canvas id="unity-canvas" tabindex="-1"></canvas>
+  
+  <!-- We pull a Brotli decompressor to bypass the browser's bullshit header rules -->
+  <script src="https://unpkg.com/unbrotli@0.1.3/dist/unbrotli.js"></script>
+  <script>
+    // LO - UPDATE THIS URL to point to your GitHub repo's Build folder via jsDelivr
+    // Example: "https://cdn.jsdelivr.net/gh/USERNAME/REPO_NAME@main/Build/"
+    const REPO_URL = "https://cdn.jsdelivr.net/gh/USERNAME/YOUR-REPO@main/Build/";
+    
+    const canvas = document.querySelector("#unity-canvas");
+    const loadingScreen = document.querySelector("#loading-screen");
+    const loadingText = document.querySelector("#loading-text");
+    const progressBar = document.querySelector("#progress-bar");
+
+    function updateProgress(text, percent) {
+      loadingText.innerText = text;
+      if (percent !== null) {
+        progressBar.style.width = percent + "%";
+      }
+    }
+
+    async function fetchChunks(filename, numChunks) {
+      let totalLength = 0;
+      const buffers = [];
+      for (let i = 0; i < numChunks; i++) {
+        updateProgress(`Smuggling ${filename} part ${i+1}/${numChunks}...`, (i / numChunks) * 50);
+        const res = await fetch(`${REPO_URL}${filename}.part${i}`);
+        if (!res.ok) throw new Error(`Failed to download ${filename}.part${i}`);
+        const buf = await res.arrayBuffer();
+        buffers.push(buf);
+        totalLength += buf.byteLength;
+      }
+      
+      const combined = new Uint8Array(totalLength);
+      let offset = 0;
+      for (const buf of buffers) {
+        combined.set(new Uint8Array(buf), offset);
+        offset += buf.byteLength;
+      }
+      return combined;
+    }
+
+    async function loadGame() {
+      try {
+        // 1. Fetch and combine the massive data file (5 parts based on our python script)
+        const compressedData = await fetchChunks("TreesHateYou_Web.data.br", 5); 
+        
+        updateProgress("Decompressing payload... (This might take a sec)", 60);
+        // 2. Decompress the brotli file right here in the wild
+        // Wait a tiny bit so the UI updates before the heavy synchronous decompression
+        await new Promise(r => setTimeout(r, 100)); 
+        const decompressedData = unbrotli(compressedData);
+        
+        // 3. Create a blob URL that Unity can slurp up (now uncompressed!)
+        const dataBlob = new Blob([decompressedData]);
+        const dataUrl = URL.createObjectURL(dataBlob);
+
+        // Fetch framework and wasm (assuming they are under 20MB and don't need chunks)
+        // We leave them as .br if they are small enough, BUT we actually need them uncompressed too 
+        // if they don't have the right headers!
+        // Wait, if jsDelivr doesn't send headers for .wasm.br either, we must decompress them too.
+        
+        updateProgress("Cracking framework...", 70);
+        const fwRes = await fetch(`${REPO_URL}TreesHateYou_Web.framework.js.br`);
+        const fwDec = unbrotli(new Uint8Array(await fwRes.arrayBuffer()));
+        const fwUrl = URL.createObjectURL(new Blob([fwDec], {type: "application/javascript"}));
+
+        updateProgress("Cracking WASM...", 80);
+        const wasmRes = await fetch(`${REPO_URL}TreesHateYou_Web.wasm.br`);
+        const wasmDec = unbrotli(new Uint8Array(await wasmRes.arrayBuffer()));
+        const wasmUrl = URL.createObjectURL(new Blob([wasmDec], {type: "application/wasm"}));
+
+        const config = {
+          dataUrl: dataUrl,
+          frameworkUrl: fwUrl,
+          codeUrl: wasmUrl,
+          companyName: "tykenn games",
+          productName: "Trees Hate You",
+          productVersion: "0.1.0",
+        };
+
+        updateProgress("Igniting Unity Engine...", 90);
+        
+        // Load the Unity Loader
+        const script = document.createElement("script");
+        script.src = `${REPO_URL}TreesHateYou_Web.loader.js`;
+        script.onload = () => {
+          createUnityInstance(canvas, config, (progress) => {
+            updateProgress(`Booting... ${Math.round(progress * 100)}%`, 90 + (progress * 10));
+          }).then((unityInstance) => {
+            loadingScreen.style.display = "none";
+          }).catch(err => {
+            updateProgress("Unity crashed: " + err.message, null);
+          });
+        };
+        document.body.appendChild(script);
+
+      } catch (err) {
+        updateProgress("Shit went sideways: " + err.message, null);
+        console.error(err);
+      }
+    }
+
+    loadGame();
+  </script>
+</body>
+</html>
