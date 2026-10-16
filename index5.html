@@ -6,9 +6,9 @@
   <style>
     body { background: #000; margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
     #unity-canvas { width: 100vw; height: 100vh; display: block; }
-    #loading-screen {
-      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-      background: #111; display: flex; flex-direction: column;
+    #loading-screen { 
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+      background: #111; display: flex; flex-direction: column; 
       justify-content: center; align-items: center; color: white; z-index: 10;
     }
     #loading-text { font-size: 24px; margin-bottom: 20px; font-weight: normal; }
@@ -25,19 +25,15 @@
 
   <script>
     // ══════════════════════════════════════════════════════════════
-    //  REPO_URL ahora apunta a TU propio repo (githack)
+    //  URL CORREGIDA: eliminado "refs/heads/"
     // ══════════════════════════════════════════════════════════════
-    const REPO_URL = "https://raw.githack.com/derekonsio1023-gif/Ultron-games-Spanish/refs/heads/main/Games/Trees%20Hate%20You/Build/";
+    const REPO_URL = "https://raw.githack.com/derekonsio1023-gif/Ultron-games-Spanish/main/Games/Trees%20Hate%20You/Build/";
 
-    // ══════════════════════════════════════════════════════════════
-    //  Interceptor: reescribe los nombres de los .br → .br.bin
-    //  (para que githack no añada Content-Encoding: br)
-    // ══════════════════════════════════════════════════════════════
+    // Interceptor para redirigir .br a .br.bin
     (function () {
       var _fetch = window.fetch;
       window.fetch = function (input, init) {
         var url = typeof input === 'string' ? input : (input && input.url) || '';
-        // Si termina en .br o .br.partX → añadir .bin al final
         if (/\.br(\.part\d+)?$/i.test(url)) {
           var fixed = url + '.bin';
           console.log('[BROTLI-FIX]', url, '→', fixed);
@@ -90,7 +86,9 @@
         updateProgress("Decompressing data assets...", 30);
         await new Promise(r => setTimeout(r, 50));
         const decompressedData = brotli.decompress(compressedData);
-        const dataUrl = URL.createObjectURL(new Blob([decompressedData]));
+
+        const dataBlob = new Blob([decompressedData]);
+        const dataUrl = URL.createObjectURL(dataBlob);
 
         updateProgress("Loading framework...", 40);
         const fwRes = await fetch(`${REPO_URL}TreesHateYou_Web.framework.js.br`);
@@ -122,7 +120,7 @@
         script.onload = () => {
           createUnityInstance(canvas, config, (progress) => {
             updateProgress(`Loading... ${Math.round(progress * 100)}%`, 90 + (progress * 10));
-          }).then(() => {
+          }).then((unityInstance) => {
             loadingScreen.style.display = "none";
           }).catch(err => {
             updateProgress("Engine error: " + err.message, null);
