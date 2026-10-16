@@ -17,6 +17,41 @@
   </style>
 </head>
 <body>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       FIX BROTLI — intercepta los .br y los pasa por un proxy que
+       NO envía Content-Encoding: br, evitando la doble descompresión.
+       ══════════════════════════════════════════════════════════════ -->
+  <script>
+  (function () {
+    try {
+      var BROTLI_PROXY = 'https://api.allorigins.win/raw?url=';
+      var _fetch = window.fetch;
+
+      window.fetch = function (input, init) {
+        var raw = typeof input === 'string' ? input : (input && input.url) || '';
+
+        // Intercepta:
+        //   TreesHateYou_Web.data.br.partN     (chunks del .data)
+        //   TreesHateYou_Web.wasm.br.partN     (chunks del .wasm)
+        //   TreesHateYou_Web.framework.js.br   (framework de un solo archivo)
+        if (/\.br(\.part\d+)?($|\?)/i.test(raw)) {
+          var proxied = BROTLI_PROXY + encodeURIComponent(raw);
+          console.log('[BROTLI-FIX] proxy:', raw);
+          return _fetch.call(this, proxied, init);
+        }
+
+        return _fetch.call(this, input, init);
+      };
+
+      console.log('[BROTLI-FIX] activo');
+    } catch (e) {
+      console.error('[BROTLI-FIX] error:', e);
+    }
+  })();
+  </script>
+  <!-- ══════════════════════════════════════════════════════════════ -->
+
   <div id="loading-screen">
     <div id="loading-text">Loading... 0%</div>
     <div id="progress-container">
@@ -24,12 +59,12 @@
     </div>
   </div>
   <canvas id="unity-canvas" tabindex="-1"></canvas>
-  
+
   <script>
     // Pointing to your specific GitHub repo via jsDelivr
     // Replace with your actual github repo
     const REPO_URL = "https://cdn.jsdelivr.net/gh/thirstygithub/fugglelatougin@main/Build/";
-    
+
     const canvas = document.querySelector("#unity-canvas");
     const loadingScreen = document.querySelector("#loading-screen");
     const loadingText = document.querySelector("#loading-text");
@@ -53,7 +88,7 @@
         buffers.push(buf);
         totalLength += buf.byteLength;
       }
-      
+
       const combined = new Uint8Array(totalLength);
       let offset = 0;
       for (const buf of buffers) {
@@ -70,12 +105,12 @@
         const brotli = await brotliModule.default;
 
         updateProgress("Downloading data...", 10);
-        const compressedData = await fetchChunks("TreesHateYou_Web.data.br", 5); 
-        
+        const compressedData = await fetchChunks("TreesHateYou_Web.data.br", 5);
+
         updateProgress("Decompressing data assets...", 30);
-        await new Promise(r => setTimeout(r, 50)); 
+        await new Promise(r => setTimeout(r, 50));
         const decompressedData = brotli.decompress(compressedData);
-        
+
         const dataBlob = new Blob([decompressedData]);
         const dataUrl = URL.createObjectURL(dataBlob);
 
@@ -86,9 +121,8 @@
         const fwUrl = URL.createObjectURL(new Blob([fwDec], {type: "application/javascript"}));
 
         updateProgress("Downloading WebAssembly...", 50);
-        // The wasm file is 70MB, so it was chunked into 4 parts!
         const wasmCompressed = await fetchChunks("TreesHateYou_Web.wasm.br", 4);
-        
+
         updateProgress("Decompressing WebAssembly...", 80);
         await new Promise(r => setTimeout(r, 50));
         const wasmDec = brotli.decompress(wasmCompressed);
@@ -104,7 +138,7 @@
         };
 
         updateProgress("Initializing engine...", 90);
-        
+
         const script = document.createElement("script");
         script.src = `${REPO_URL}TreesHateYou_Web.loader.js`;
         script.onload = () => {
